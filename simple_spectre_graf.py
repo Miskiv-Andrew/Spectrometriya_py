@@ -90,7 +90,7 @@ class Ui_Form(object):
         self.gridLayout_5.setObjectName("gridLayout_5")
         self.label = QtWidgets.QLabel(Form)
         self.label.setObjectName("label")
-        self.gridLayout_5.addWidget(self.label, 1, 0, 1, 1)
+        self.gridLayout_5.addWidget(self.label, 1, 0, 1, 1)        
         self.label_2 = QtWidgets.QLabel(Form)
         self.label_2.setObjectName("label_2")
         self.gridLayout_5.addWidget(self.label_2, 1, 2, 1, 1)

@@ -38,13 +38,14 @@ class MainApp(QtWidgets.QMainWindow):
     # Создаем сигнал для разрешения-запрещения инструментов простого графика спектра
     send_simple_graf_instrument_signal = pyqtSignal(bool)
 
-
     # Создаем сигнал для передачи времени начала набора часового спектра 
     send_time_graf_time_signal = pyqtSignal(object) 
 
     # Создаем сигнал для разрешения-запрещения инструментов часового графика спектра
     send_time_graf_instrument_signal = pyqtSignal(bool)
 
+    # Создаем сигнал для разрешения-запрещения инструментов загрузки из файла часового графика спектра
+    send_time_graf_load_file_signal = pyqtSignal(bool)
 
     # Создаем сигнал без параметров для старта поиска порта девайса
     send_search_dev_signal = pyqtSignal()
@@ -56,8 +57,7 @@ class MainApp(QtWidgets.QMainWindow):
     send_clear_1_spectre = pyqtSignal()   
 
     # Создаем сигнал без параметров для очистки данных часового спектра
-    send_clear_2_spectre = pyqtSignal()   
-
+    send_clear_2_spectre = pyqtSignal()  
 
     def __init__(self):        
         super(MainApp, self).__init__()
@@ -68,17 +68,22 @@ class MainApp(QtWidgets.QMainWindow):
         # Создаем экземпляр SerialPortHandler
         self.serial_handler = SERIAL.SerialPortHandler()    
 
+        # Создаем атрибут начала времени набора спектра
+        self.start_spectre_time = None  
+
         # Подключаем сигнал gui_info_signal класса SerialPortHandler к методу port_info_process 
         self.serial_handler.gui_info_signal.connect(self.port_info_process)
 
         # Подключаем сигнал старта поиска порта девайса к слоту find_device_port SerialPortHandler
         self.send_search_dev_signal.connect(self.serial_handler.find_device_port) 
+
+
+
         # Подключаем кнопку поиска порта девайса
         self.pushButton_search_dev.clicked.connect(self.handle_button_search_dev) 
 
         # # Подключаем сигнал записи данных в девайс к слоту write_data SerialPortHandler  
         # self.send_ser_handler_signal.connect(self.serial_handler.write_data)    
-
         # Подключаем сигнал записи данных в девайс к слоту запуска потока handle_write_signal SerialPortHandler 
         self.send_ser_handler_signal.connect(self.serial_handler.handle_write_signal) 
 
@@ -95,19 +100,15 @@ class MainApp(QtWidgets.QMainWindow):
 
         # Подключаем кнопку очистки простого спектра
         self.pushButton_clear_1_spectre.clicked.connect(self.handle_button_clear_1_spectre)  
-
       
         # Подключаем кнопку старта-остановки часового спектра
         self.pushButton_9.clicked.connect(self.handle_button_search_file_2_spectre) 
-
 
         # Подключаем кнопку старта-остановки часового спектра
         self.pushButton_start_2_spectre.clicked.connect(self.handle_button_start_2_spectre) 
 
          # Подключаем кнопку очистки простого спектра
-        self.pushButton_clear_2_spectre.clicked.connect(self.handle_button_clear_2_spectre)  
-
-        
+        self.pushButton_clear_2_spectre.clicked.connect(self.handle_button_clear_2_spectre)          
 
 
         self.action_1.triggered.connect(self.test_action)
@@ -127,8 +128,8 @@ class MainApp(QtWidgets.QMainWindow):
         self.s_graf.gui_info_signal.connect(self.s_graf_info_process)
 
 
-        # # Атрибут окна часового спектра
-        self.t_graf =  TimeGraf()  
+        # # Атрибут окна часового спектра 
+        self.t_graf =  TimeGraf()         
 
         # Подключаем сигнал gui_info_signal класса SerialPortHandler к методу port_info_process 
         self.t_graf.gui_info_signal.connect(self.port_info_process)   
@@ -138,15 +139,15 @@ class MainApp(QtWidgets.QMainWindow):
         self.send_time_graf_time_signal.connect(self.t_graf.set_start_spectre_time)
 
 
-        # Создаем сигнал для разрешения-запрещения инструментов часового графика спектра
+        # Подключаем сигнал для разрешения-запрещения инструментов часового графика спектра
         self.send_time_graf_instrument_signal.connect(self.t_graf.set_instrument_spectre)
+
+        # Подключаем сигнал для разрешения-запрещения инструментов загруз-ки из файла часового графика спектра
+        self.send_time_graf_load_file_signal.connect(self.t_graf.set_instrument_load_file_spectre)
 
         # Подключаем сигнал очистки простого спектра к слоту 
         self.send_clear_2_spectre.connect(self.t_graf.clear_spectre) 
-
-
-
-
+        
         # Получаем объект экрана
         screen = QApplication.primaryScreen()
 
@@ -189,6 +190,9 @@ class MainApp(QtWidgets.QMainWindow):
         font.setItalic(True)             # Отключаем курсив
         font.setUnderline(False)         # Отключаем подчеркивание       
         self.textEdit_2.setFont(font)
+       
+
+        self.send_time_graf_instrument_signal.emit(False)
 
         
 
@@ -207,7 +211,7 @@ class MainApp(QtWidgets.QMainWindow):
         self.pushButton_clear_1_spectre.setEnabled(flag)   
         self.pushButton_start_2_spectre.setEnabled(flag)  
         self.pushButton_clear_2_spectre.setEnabled(flag)
-        self.pushButton_9.setEnabled(flag)
+        
 
                 
     
@@ -314,6 +318,7 @@ class MainApp(QtWidgets.QMainWindow):
         self.send_clear_1_spectre.emit()
         self.textEdit.clear()
         self.textEdit_2.clear()
+        self.start_spectre_time = None
 
 
     @pyqtSlot()
@@ -321,6 +326,7 @@ class MainApp(QtWidgets.QMainWindow):
         self.send_clear_2_spectre.emit()
         self.textEdit.clear()
         self.textEdit_2.clear()
+        self.start_spectre_time = None
 
 
     @pyqtSlot()
@@ -328,58 +334,62 @@ class MainApp(QtWidgets.QMainWindow):
         options = QFileDialog.Options()
         options |= QFileDialog.ReadOnly
 
-        # Установка фильтра файлов
-        filter = "SSP Files (*.ssp);;TSP Files (*.tsp);;All Files (*)"
+        # Установка фильтра файлов       
+        filter = "TSP Files (*.tsp);;All Files (*)"
         file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", filter, options=options)
 
-        if file_name:
-            print(f'Selected file: {file_name}')
+        if file_name:            
+            self.open_time_graf()
+        
+        # Здесь открываем файл, получаем данные и работаем с ними
 
-
-        # file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "All Files (*);;Text Files (*.txt)", options=options)
-
-        # if file_name:
-        #     print(f'Selected file: {file_name}')
+       
 
     @pyqtSlot()
-    def handle_button_start_1_spectre(self):
-        
+    def handle_button_start_1_spectre(self):        
         command = None       
-        time_string = None 
-        enable = True     
+        enable = True    
+
+        if self.start_spectre_time == None:
+            current_time = datetime.now()                                # Получаем  время начала набора спектра
+            self.start_spectre_time = current_time.strftime("%H:%M:%S") + "\n"
+
         
         if self.pushButton_start_1_spectre.text() == "Стандартний спектр - почати набір": 
             self.pushButton_start_1_spectre.setText("Стандартний спектр - зупинити набір")
-            command = COMM.DeviceCommands.COMMAND_TOGGLE_SIMPLE_SPECTRE
-            current_time = datetime.now()                                # Получаем текущее время 
-            time_string = current_time.strftime("%H:%M:%S") + "\n"
+            command = COMM.DeviceCommands.COMMAND_TOGGLE_SIMPLE_SPECTRE           
             enable = False
             self.open_simple_graf()    
-            self.t_graf.close()     
-
+            self.t_graf.close()    
             self.pushButton_clear_1_spectre.setEnabled(False)   
             self.pushButton_start_2_spectre.setEnabled(False)  
-            self.pushButton_clear_2_spectre.setEnabled(False)
-            self.pushButton_9.setEnabled(False)
-
+            self.pushButton_clear_2_spectre.setEnabled(False)         
+            self.pushButton_search_dev.setEnabled(False)
+            self.pushButton_ser_num_dev.setEnabled(False)
+            self.pushButton_temp_dev.setEnabled(False)
+            self.pushButton_intence.setEnabled(False)
+            self.pushButton_paed.setEnabled(False)
             self.textEdit.clear()
             self.textEdit_2.clear()
             
         else: 
             self.pushButton_start_1_spectre.setText("Стандартний спектр - почати набір")
-            command = COMM.DeviceCommands.COMMAND_RAD_DOSE 
-           
+            command = COMM.DeviceCommands.COMMAND_RAD_DOSE            
             self.pushButton_clear_1_spectre.setEnabled(True)   
             self.pushButton_start_2_spectre.setEnabled(True)  
-            self.pushButton_clear_2_spectre.setEnabled(True)
-            self.pushButton_9.setEnabled(True)            
+            self.pushButton_clear_2_spectre.setEnabled(True)             
+            self.pushButton_search_dev.setEnabled(True)
+            self.pushButton_ser_num_dev.setEnabled(True)
+            self.pushButton_temp_dev.setEnabled(True)
+            self.pushButton_intence.setEnabled(True)
+            self.pushButton_paed.setEnabled(True)          
         
         try:   
             # Отправляем сигнал записи данных в порт           
             self.send_ser_handler_signal.emit(command) 
 
             # Отправляем сигналы времени и интерфейса            
-            self.send_simple_graf_time_signal.emit(time_string)
+            self.send_simple_graf_time_signal.emit(self.start_spectre_time)
             self.send_simple_graf_instrument_signal.emit(enable)
 
         except Exception as e:   
@@ -389,24 +399,29 @@ class MainApp(QtWidgets.QMainWindow):
 
     @pyqtSlot()
     def handle_button_start_2_spectre(self):                              
-        command = None       
-        time_string = None 
-        enable = True     
+        command = None  
+        enable = True    
+
+        if self.start_spectre_time == None:
+            current_time = datetime.now()                                # Получаем  время начала набора спектра
+            self.start_spectre_time = current_time.strftime("%H:%M:%S") + "\n"
+
         
         if self.pushButton_start_2_spectre.text() == "Часовий спектр - почати набір": 
             self.pushButton_start_2_spectre.setText("Часовий спектр - зупинити набір")
-            command = COMM.DeviceCommands.COMMAND_TOGGLE_TIME_SPECTRE
-            current_time = datetime.now()                                # Получаем текущее время 
-            time_string = current_time.strftime("%H:%M:%S") + "\n"
+            command = COMM.DeviceCommands.COMMAND_TOGGLE_TIME_SPECTRE           
             enable = False 
             self.open_time_graf()  
             self.s_graf.close() 
 
             self.pushButton_clear_1_spectre.setEnabled(False)   
             self.pushButton_start_1_spectre.setEnabled(False)  
-            self.pushButton_clear_2_spectre.setEnabled(False)
-            self.pushButton_9.setEnabled(False)
-
+            self.pushButton_clear_2_spectre.setEnabled(False)           
+            self.pushButton_search_dev.setEnabled(False)
+            self.pushButton_ser_num_dev.setEnabled(False)
+            self.pushButton_temp_dev.setEnabled(False)
+            self.pushButton_intence.setEnabled(False)
+            self.pushButton_paed.setEnabled(False)
             self.textEdit.clear()
             self.textEdit_2.clear()
             
@@ -417,14 +432,18 @@ class MainApp(QtWidgets.QMainWindow):
             self.pushButton_clear_1_spectre.setEnabled(True)   
             self.pushButton_start_1_spectre.setEnabled(True)  
             self.pushButton_clear_2_spectre.setEnabled(True)
-            self.pushButton_9.setEnabled(True)
+            self.pushButton_search_dev.setEnabled(True)
+            self.pushButton_ser_num_dev.setEnabled(True)
+            self.pushButton_temp_dev.setEnabled(True)
+            self.pushButton_intence.setEnabled(True)
+            self.pushButton_paed.setEnabled(True)
         
         try:              
             # Отправляем сигнал записи данных в порт
             self.send_ser_handler_signal.emit(command) 
 
             # Отправляем сигналы времени и интерфейса  
-            self.send_time_graf_time_signal.emit(time_string)
+            self.send_time_graf_time_signal.emit(self.start_spectre_time)
             self.send_time_graf_instrument_signal.emit(enable)
 
         except Exception as e:   
@@ -462,6 +481,8 @@ class MainApp(QtWidgets.QMainWindow):
                 if  inner_value ==  "dev_no_search": 
                     self.textEdit.clear() 
                     self.textEdit.append(_dict.get("message")) 
+                    self.pushButton_9.setEnabled(True)    
+                    self.send_time_graf_load_file_signal.emit(True)  
                     return None          
 
                 elif inner_value ==  "dev_search":  
@@ -469,6 +490,8 @@ class MainApp(QtWidgets.QMainWindow):
                     self.lineEdit_search.setText(_str)
                     self.send_start_dev_threads.emit()
                     self.buttons_enable(True)   
+                    self.pushButton_9.setEnabled(False) 
+                    self.send_time_graf_load_file_signal.emit(False)  
                     return None      
            
             case "ped":

@@ -122,13 +122,12 @@ class SerialPortHandler(QObject):
                     if not "USB" in port.description:  continue 
                     
                     # Создаем и открываем очередной порт
-                    if self.serial_port == None:
-                        ser = serial.Serial(port.device, baudrate = 115200, timeout = 1)  
-
-                    else:
-                        self.serial_port.close()
-                        self.serial_port == None
-                        ser = serial.Serial(port.device, baudrate = 115200, timeout = 1)  
+                    if self.serial_port != None:
+                        if self.serial_port.isOpen():
+                            self.serial_port.close()
+                        self.serial_port = None
+                   
+                    ser = serial.Serial(port.device, baudrate = 115200, timeout = 1)  
                         
                     
                     # Формируем и отправляем запрос серийного номера + CRC 

@@ -11,9 +11,11 @@ from PyQt5.QtWidgets import QFileDialog, QMessageBox
 import matplotlib.pyplot as plt
 from  matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from  matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from  matplotlib.gridspec import GridSpec
-from  matplotlib.ticker   import NullLocator, LinearLocator, MultipleLocator, IndexLocator, FixedLocator, MaxNLocator
+# from  matplotlib.gridspec import GridSpec
+# from  matplotlib.ticker   import NullLocator, LinearLocator, MultipleLocator, IndexLocator, FixedLocator, MaxNLocator
 from  matplotlib.ticker   import ScalarFormatter
+
+from matplotlib.lines import Line2D
 
 import numpy as np
 
@@ -94,7 +96,7 @@ class Ui_Form(object):
         self.verticalLayout = QtWidgets.QVBoxLayout()
         self.verticalLayout.setObjectName("verticalLayout")
         self.checkBox = QtWidgets.QCheckBox(Form)
-        self.checkBox.setObjectName("checkBox")
+        self.checkBox.setObjectName("checkBox")        
         self.verticalLayout.addWidget(self.checkBox)
         self.comboBox = QtWidgets.QComboBox(Form)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -159,7 +161,49 @@ class Ui_Form(object):
         # Добавляем панель инструментов для навигации по графику
         self.navigation_toolbar_1 = NavigationToolbar(self.canvas_1, Form) 
         layout_1.addWidget(self.navigation_toolbar_1)
+
         self.ax_1 = self.figure_1.add_subplot(111)
+        x_ticks = np.arange(0, 1100000, 100000)
+        self.ax_1.set_xticks(x_ticks)    
+        # Установите ScalarFormatter для оси X
+        formatter = ScalarFormatter(useOffset=False)
+        formatter.set_scientific(False)  # Отключить научную запись
+        self.ax_1.xaxis.set_major_formatter(formatter)
+
+
+        # y_ticks = np.arange(0, 1100, 100)
+        # self.ax_1.set_yticks(y_ticks)
+        # self.ax_1.set_ylim(0, 1100)
+
+        y_ticks = np.arange(0, 1200, 100)
+        self.ax_1.set_yticks(y_ticks)
+        self.ax_1.set_ylim(0, 1200)
+
+        # Настройка осей
+        self.ax_1.spines['left'].set_position('zero')  # Ось Y начинается с 0
+        self.ax_1.spines['bottom'].set_position('zero')  # Ось X начинается с 0
+        self.ax_1.spines['right'].set_color('none')  # Убираем правую ось
+        self.ax_1.spines['top'].set_color('none')  # Убираем верхнюю ось
+        # Установка подписей для осей
+        self.ax_1.set_xlabel("Час  (мксек)", fontsize = 8)
+        self.ax_1.set_ylabel("Канал імпульса", fontsize = 8)
+        # Дополнительно можно настроить стиль текста
+        self.ax_1.xaxis.label.set_style("italic")  # Курсив для подписи оси X
+        self.ax_1.yaxis.label.set_style("italic")  # Курсив для подписи оси Y
+        # Добавляем сетку
+        self.ax_1.grid(True, which='both', axis='both', linestyle='--', linewidth=0.5)
+        # Сетка будет рисоваться ниже графика
+        self.ax_1.set_axisbelow(True)
+        # Добавляем отступы через фигуру
+        self.figure_1.subplots_adjust(left = 0.08, right = 0.95, top = 0.95, bottom = 0.2)
+
+        # Создание пустого Line2D 
+        self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = 1) 
+        self.ax_1.add_line(self.line)
+
+
+
+
 
 
         # Создаем Figure и FigureCanvas
@@ -174,10 +218,15 @@ class Ui_Form(object):
 
 
         self.start_spectre_time = None
+        self.checkBox.stateChanged.connect(self.on_checkBox_file_search)   
 
-        self.checkBox.stateChanged.connect(self.on_checkBox_file_search)
-
+        # Полный путь к файлу загрузки данных
         self.file_path = None
+
+        # Счетчик групп записей в файл
+        self.group_file_index = 0
+
+
 
 
 
@@ -202,39 +251,65 @@ class Ui_Form(object):
 
     @pyqtSlot(bool)
     def set_instrument_spectre(self, flag):    
-        pass
-
-
-    def on_checkBox_file_search(self, state):
+        self.checkBox.setEnabled(flag)
         
+    @pyqtSlot(bool)
+    def set_instrument_load_file_spectre(self, flag): 
+        self.comboBox.setEnabled(flag)
+        self.pushButton.setEnabled(flag)
+        self.pushButton_3.setEnabled(flag)
+        self.pushButton_4.setEnabled(flag) 
+
+
+    def on_checkBox_file_search(self, state):    
         try:
-            if state == QtCore.Qt.Unchecked:
-                self.file_path = ""
+            if state == QtCore.Qt.Unchecked:                
+                self.file_path = None
                 return None
 
-            options = QFileDialog.Options()
-            options |= QFileDialog.ReadOnly
+            _options = QFileDialog.Options()
+            _options |= QFileDialog.ReadOnly
 
-            file_name, _ = QFileDialog.getSaveFileName(self, "Create TSP File", "", "TSP Files (*.tsp);;All Files (*)", options = options)
-            
+            file_name, _ = QFileDialog.getSaveFileName(self, "Create .tsp file", "", "TSP Files (*.tsp);;All Files (*)", options = _options)
+
             if file_name:
                 self.file_path = file_name
 
+                if os.path.exists(self.file_path):
+                    reply = QMessageBox.question(
+                        self, 'Файл вже існує',
+                        "Файл вже існує. Замінити файл? Усі дані буде втрачено.",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                    )
+
+                    if reply == QMessageBox.No:
+                        self.file_path = None
+                        return None
+
                 # Открытие или создание файла HDF5
-                with h5py.File(self.file_path, 'a') as file:
+                with h5py.File(self.file_path, 'w') as file:
                     # Отображение информационного сообщения
                     QMessageBox.information(self, "Файл створено", f"Файл створено, запис даних буде відбуватись в нього:\n {self.file_path}")
                     # Здесь можно добавить любые начальные данные, если нужно
+
+                    # Очищаем все данные перед началом записи
+                    self.clear_spectre()
+
+                    # Сбрасываем счетчик групп записей в файл
+                    self.group_file_index = 0
+
+
+
             else:
-                self.file_path = ""
+                self.file_path = None
                 return None
 
         except Exception as e:
             print(f"Error: {e}")
-            self.file_path = ""
+            self.file_path = None
 
         
-
+    
 
 
     @pyqtSlot()
@@ -247,6 +322,43 @@ class Ui_Form(object):
         self.canvas_1.draw()   
 
 
+        # self.ax_1 = self.figure_1.add_subplot(111)
+        x_ticks = np.arange(0, 1100000, 100000)
+        self.ax_1.set_xticks(x_ticks)    
+        # # Установите ScalarFormatter для оси X
+        formatter = ScalarFormatter(useOffset=False)
+        formatter.set_scientific(False)  # Отключить научную запись
+        self.ax_1.xaxis.set_major_formatter(formatter)
+        y_ticks = np.arange(0, 1200, 100)
+        self.ax_1.set_yticks(y_ticks)
+        self.ax_1.set_ylim(0, 1200)
+        # # Настройка осей
+        self.ax_1.spines['left'].set_position('zero')  # Ось Y начинается с 0
+        self.ax_1.spines['bottom'].set_position('zero')  # Ось X начинается с 0
+        self.ax_1.spines['right'].set_color('none')  # Убираем правую ось
+        self.ax_1.spines['top'].set_color('none')  # Убираем верхнюю ось
+        # Установка подписей для осей
+        self.ax_1.set_xlabel("Час  (мксек)", fontsize = 8)
+        self.ax_1.set_ylabel("Канал імпульса", fontsize = 8)
+        # # Дополнительно можно настроить стиль текста
+        self.ax_1.xaxis.label.set_style("italic")  # Курсив для подписи оси X
+        self.ax_1.yaxis.label.set_style("italic")  # Курсив для подписи оси Y
+        # Добавляем сетку
+        self.ax_1.grid(True, which='both', axis='both', linestyle='--', linewidth=0.5)
+        # Сетка будет рисоваться ниже графика
+        self.ax_1.set_axisbelow(True)
+        # # Добавляем отступы через фигуру
+        # self.figure_1.subplots_adjust(left = 0.08, right = 0.95, top = 0.95, bottom = 0.2)
+
+        # Создание пустого Line2D 
+        self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = 1) 
+        self.ax_1.add_line(self.line)
+
+
+
+
+
+
     def get_nonzero_values(self):
 
         # Получаем индексы ненулевых значений
@@ -255,6 +367,147 @@ class Ui_Form(object):
         nonzero_values = self.global_buff[nonzero_indices]
         
         return nonzero_indices, nonzero_values
+    
+
+    def load_data_to_file(self, data_list):        
+        if self.file_path:        
+            with h5py.File(self.file_path, 'a') as file:  # Открытие файла на дозапись
+                group_name = f'list_{self.group_file_index}'  # Уникальное имя для каждой группы данных
+                group = file.create_group(group_name)
+                for j, (val1, val2) in enumerate(data_list):
+                    group.create_dataset(f'pair_{j}', data=np.array([val1, val2]))
+                self.group_file_index += 1  # Увеличение порядкового номера для следующего списка данных
+
+
+
+
+    # @pyqtSlot(bytearray)
+    # def time_spectre_slot(self, data:bytearray)-> None:  
+
+    #     try: 
+
+    #         start_time = time.perf_counter() 
+
+    #         if(data[5] == 0x09):
+    #             return None             
+
+    #         # Обнуляем суммарную часовую метку
+    #         self.time_parameter = 0 
+
+
+    #         # Преобразуем data в numpy массив для векторизации
+    #         data_np = np.frombuffer(data, dtype = np.uint8)
+    #         buff_list = []            
+            
+    #         # Преобразуем данные сразу в numpy массивы для обработки
+    #         l_byte_ch = data_np[6:8994:6]
+    #         m_byte_ch = data_np[7:8994:6]
+    #         channels = l_byte_ch + (m_byte_ch << 8)
+
+    #         l0_byte_tm = data_np[8:8994:6]
+    #         l1_byte_tm = data_np[9:8994:6]
+    #         tmp_val_l = l0_byte_tm + (l1_byte_tm << 8)
+
+    #         l2_byte_tm = data_np[10:8994:6]
+    #         l3_byte_tm = data_np[11:8994:6]
+    #         tmp_val_m = l2_byte_tm  + (l3_byte_tm << 8)   
+
+    #         new_times  = tmp_val_l + (tmp_val_m << 16)  
+            
+    #         # Заполняем buff_list и глобальный буфер
+    #         for i in range(len(channels)):
+    #             channel = channels[i]
+    #             if channel == 0:
+    #                 continue
+    #             new_time = new_times[i]
+    #             self.time_parameter += new_time
+    #             if self.time_parameter > 1000000:
+    #                 break
+    #             buff_list.append((channel, self.time_parameter))
+
+    #         for pair in buff_list:
+    #             value = pair[0]
+    #             index = pair[1]
+    #             if value == 0 or index == 0:
+    #                 continue
+    #             if index < len(self.global_buff):
+    #                 self.global_buff[index] = value           
+
+    #         if self.checkBox.isChecked():
+    #             self.load_data_to_file(buff_list)
+
+           
+    #         # ## Получаем numpy массивы для отрисовки
+    #         # nonzero_indices, nonzero_values = self.get_nonzero_values()            
+    #         # self.ax_1.scatter(nonzero_indices, nonzero_values,  s = 3, color='blue', label = "Small Points" )   
+
+    #          # Преобразуем buff_list в numpy массивы для отрисовки
+    #         indices, values = zip(*buff_list)
+    #         indices = np.array(indices)
+    #         values = np.array(values) 
+
+    #         # self.ax_1.scatter(indices, values,  s = 3, color='blue', label = "Small Points" )   
+    #         self.ax_1.scatter(values, indices,  s = 3, color='blue', label = "Small Points" )   
+                
+               
+    #         self.canvas_1.draw()   
+
+
+    #         # Время набора спектра
+    #         t_value = data[9006]    + (data[9007] << 8) 
+
+    #         # ПЕД
+    #         l_byte_ped = data[9008] + (data[9009] << 8)
+    #         m_byte_ped = data[9010] + (data[9011] << 8) 
+    #         num = l_byte_ped + (m_byte_ped << 8)       
+    #         ped = num * 0.01 
+
+    #         # CPS
+    #         value = data[9016]   + (data[9017] << 8) 
+            
+    #         # Тестовый байт
+    #         byte_to_check = data[9013]
+    #         high_sens_detect  = "OK"
+    #         low_sens_detector = "OK"           
+    #         if byte_to_check & 0b00000001:   # D0 = 1 - отказ высокочувствительного детектора
+    #             high_sens_detect  = "ERROR" 
+
+    #         if byte_to_check & 0b00000010:   # D1 = 1 - отказ низкочувствительного детектора
+    #             low_sens_detector = "ERROR" 
+           
+            
+    #         formatted_text = f"""
+    #             <h3><b><i>Накопичення часового спектру</i></b></h3>
+    #             <p><b><i>Час початку накопичення:</i></b> <span style="color: blue;">&nbsp;{self.start_spectre_time }</span></p>
+    #             <p><b><i>Тривалість накопичення, с:</i></b> <span style="color: green;">&nbsp;{t_value}</span></p>
+    #             <p><b><i>Потужність дози, мкЗв/год:</i></b> <span style="color: red;">&nbsp;{str(ped)}</span></p>
+    #             <p><b><i>Завантаження, імп/сек:</i></b> <span style="color: purple;">&nbsp;{str(value)}</span></p>
+    #             <p><b>Самоконтроль ЛГМ:</b> <span style="color: black;">&nbsp;{low_sens_detector}</span></p>
+    #             <p><b>Самоконтроль високочутливого детект.:</b> <span style="color: black;">&nbsp;{high_sens_detect}</span></p>
+    #             """     
+
+    #         end_time = time.perf_counter()
+    #         elapsed_time_ms = (end_time - start_time) * 1000  # Преобразование в миллисекунды
+    #         size = str(len(data))   
+    #         _str  = "Прийнято " + size + " байт спектру\n"
+    #         _str += f"Час виконання методу: {elapsed_time_ms:.3f} мілісекунд\n"            
+
+    #         info_dict = {"type": "time_spectre_params", "param_edit": _str, "data_edit": formatted_text}
+    #         if self.gui_info_signal: 
+    #             self.gui_info_signal.emit(info_dict)
+
+    #     except Exception as e:
+    #         info_dict = {"type": "time_spectre_global_write_error", "message": f"Виник exception у потоку запису даних, {str(e)}"}
+    #         if self.gui_info_signal: 
+    #             self.gui_info_signal.emit(info_dict)
+    #         self.textEdit_spectre.append(str(e) + "\n")
+
+
+
+
+
+
+
 
     @pyqtSlot(bytearray)
     def time_spectre_slot(self, data:bytearray)-> None:  
@@ -264,19 +517,7 @@ class Ui_Form(object):
             start_time = time.perf_counter() 
 
             if(data[5] == 0x09):
-                return None
-               
-
-        ###### ОЧИСТКА ###############
-        # После превышения кол-ва итераций начинаем заново "наполнять" секунду
-            # self.iteration += 1
-            # if self.iteration > COMM.Const.NUM_ITERATION:
-            #     self.iteration = 0                             
-            #     self.textEdit_spectre.append("\n\nNEW ITERATION")
-            #     self.global_buff = np.zeros(COMM.Const.GLOB_BUFF_SIZE,  dtype = np.int16)                
-            #     self.ax_1.clear()
-           
-        ###### ПЕРВИННА ОБРОБКА ###############
+                return None             
 
             # Обнуляем суммарную часовую метку
             self.time_parameter = 0 
@@ -321,48 +562,35 @@ class Ui_Form(object):
                 if index < len(self.global_buff):  
                     self.global_buff[index] = value
 
+            if self.checkBox.isChecked():
+                self.load_data_to_file(buff_list)
+
            
-            ## Получаем numpy массивы для отрисовки
-            nonzero_indices, nonzero_values = self.get_nonzero_values()            
-            self.ax_1.scatter(nonzero_indices, nonzero_values,  s = 3, color='blue', label = "Small Points" )    
+               # ## Получаем numpy массивы для отрисовки
+            # nonzero_indices, nonzero_values = self.get_nonzero_values()            
+            # self.ax_1.scatter(nonzero_indices, nonzero_values,  s = 3, color='blue', label = "Small Points" )   
 
-            x_ticks = np.arange(0, 1100000, 100000)
-            self.ax_1.set_xticks(x_ticks)           
-            
-            # Установите ScalarFormatter для оси X
-            formatter = ScalarFormatter(useOffset=False)
-            formatter.set_scientific(False)  # Отключить научную запись
-            self.ax_1.xaxis.set_major_formatter(formatter)
-           
-            
-            y_ticks = np.arange(0, 1024, 100)
-            self.ax_1.set_yticks(y_ticks)
+                ## # Преобразуем buff_list в numpy массивы для отрисовки
+            indices, values = zip(*buff_list)
+            indices = np.array(indices)
+            values = np.array(values) 
+
+         
+            # self.ax_1.scatter(values, indices,  s = 3, color='blue', label = "Small Points" )      
 
 
-                # Настройка осей
-            self.ax_1.spines['left'].set_position('zero')  # Ось Y начинается с 0
-            self.ax_1.spines['bottom'].set_position('zero')  # Ось X начинается с 0
-            self.ax_1.spines['right'].set_color('none')  # Убираем правую ось
-            self.ax_1.spines['top'].set_color('none')  # Убираем верхнюю ось
+            # # Добавление объекта Line2D на график 
+            # line = Line2D(values, indices, linestyle='None', marker='o', color='blue', markersize=3)    
+            # self.ax_1.add_line(line)
 
-            # Установка подписей для осей
-            self.ax_1.set_xlabel("Час  (мксек)", fontsize = 8)
-            self.ax_1.set_ylabel("Канал імпульса", fontsize = 8)
+            # Добавляем новые точки на график 
+            self.line.set_xdata(np.append(self.line.get_xdata(), values)) 
+            self.line.set_ydata(np.append(self.line.get_ydata(), indices)) 
+            self.ax_1.relim() 
+            self.ax_1.autoscale_view()
+               
+            self.canvas_1.draw()   
 
-            # Дополнительно можно настроить стиль текста
-            self.ax_1.xaxis.label.set_style("italic")  # Курсив для подписи оси X
-            self.ax_1.yaxis.label.set_style("italic")  # Курсив для подписи оси Y
-
-             # Добавляем сетку
-            self.ax_1.grid(True, which='both', axis='both', linestyle='--', linewidth=0.5)
-
-                # Сетка будет рисоваться ниже графика
-            self.ax_1.set_axisbelow(True)
-
-            # Добавляем отступы через фигуру
-            self.figure_1.subplots_adjust(left = 0.08, right = 0.95, top = 0.95, bottom = 0.2)
-
-            self.canvas_1.draw()     
 
             # Время набора спектра
             t_value = data[9006]    + (data[9007] << 8) 
