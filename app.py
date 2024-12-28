@@ -12,6 +12,11 @@ import time_spectre_graf as time_graf
 
 from datetime import datetime
 
+import h5py
+import numpy as np
+
+import os
+
 COMM.Const.MAX_ERROR
 
 class SimpleGraf(QtWidgets.QWidget, simple_graf.Ui_Form):  # Используем QWidget для немодального окна
@@ -46,6 +51,9 @@ class MainApp(QtWidgets.QMainWindow):
 
     # Создаем сигнал для разрешения-запрещения инструментов загрузки из файла часового графика спектра
     send_time_graf_load_file_signal = pyqtSignal(bool)
+
+    # Создаем сигнал для передачи данных из файла часового графика спектра в  class TimeGraf
+    send_time_graf_data_file_signal = pyqtSignal(object)
 
     # Создаем сигнал без параметров для старта поиска порта девайса
     send_search_dev_signal = pyqtSignal()
@@ -134,10 +142,8 @@ class MainApp(QtWidgets.QMainWindow):
         # Подключаем сигнал gui_info_signal класса SerialPortHandler к методу port_info_process 
         self.t_graf.gui_info_signal.connect(self.port_info_process)   
 
-
         # Передача времени начала набора часового спектра
         self.send_time_graf_time_signal.connect(self.t_graf.set_start_spectre_time)
-
 
         # Подключаем сигнал для разрешения-запрещения инструментов часового графика спектра
         self.send_time_graf_instrument_signal.connect(self.t_graf.set_instrument_spectre)
@@ -145,8 +151,11 @@ class MainApp(QtWidgets.QMainWindow):
         # Подключаем сигнал для разрешения-запрещения инструментов загруз-ки из файла часового графика спектра
         self.send_time_graf_load_file_signal.connect(self.t_graf.set_instrument_load_file_spectre)
 
-        # Подключаем сигнал очистки простого спектра к слоту 
+        # Подключаем сигнал очистки часового спектра к слоту 
         self.send_clear_2_spectre.connect(self.t_graf.clear_spectre) 
+
+        # Подключаем сигнал очистки часового спектра к слоту 
+        self.send_time_graf_data_file_signal.connect(self.t_graf.load_data_from_file) 
         
         # Получаем объект экрана
         screen = QApplication.primaryScreen()
@@ -170,7 +179,10 @@ class MainApp(QtWidgets.QMainWindow):
         self.serial_handler.simple_spectre_signal.connect(self.s_graf.simple_spectre_slot)  
 
         # Соединяем передачу данных простого спектра из класса SERIAL в класс simple_spectre_graf
-        self.serial_handler.time_spectre_signal.connect(self.t_graf.time_spectre_slot)  
+        self.serial_handler.time_spectre_signal.connect(self.t_graf.time_spectre_slot) 
+
+        # Атрибут данных полученных из файла спектра
+        self.all_file_data = [] 
 
 
         self.buttons_enable(False)   
@@ -331,18 +343,55 @@ class MainApp(QtWidgets.QMainWindow):
 
     @pyqtSlot()
     def handle_button_search_file_2_spectre(self):
-        options = QFileDialog.Options()
-        options |= QFileDialog.ReadOnly
+        try:    
+            options = QFileDialog.Options()
+            options |= QFileDialog.ReadOnly
 
-        # Установка фильтра файлов       
-        filter = "TSP Files (*.tsp);;All Files (*)"
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", filter, options=options)
+            # Установка фильтра файлов       
+            filter = "TSP Files (*.tsp);;All Files (*)"
+            file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", filter, options=options)
 
-        if file_name:            
+            if not file_name: # Проверка, был ли выбран файл 
+                return None
+            
+            # Получаем размер файла в байтах
+            file_size_bytes = os.path.getsize(file_name)
+            # Преобразуем размер файла в мегабайты (1 МБ = 1 048 576 байт)
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            file_size_mb = round(file_size_mb, 2)
+            self.textEdit_3.append(f"Розмір вибраного файлу: {str(file_size_mb)} мБайт")            
+            
+            self.all_file_data = [] 
+
+            with h5py.File(file_name, 'r') as file:  # Открытие файла для чтения   
+                for group_name in file.keys():  # Итерация по всем группам в файле
+                    group = file[group_name]
+                    group_data = []
+                    for dataset_name in group.keys():  # Итерация по всем датасетам в группе
+                        dataset = group[dataset_name]
+                        data = np.array(dataset)
+                        group_data.append((data[0], data[1]))  # Сохранение данных в виде кортежей
+                    self.all_file_data.append(group_data)     # Сохранение данных группы
+
+
+            if not self.all_file_data:
+                self.textEdit_3.setText("У вибраному файлі немає даних")
+                return None
+            
+            self.textEdit_3.append(f"Кількість груп у файлі: {str(len(self.all_file_data))}") 
+
+                       
             self.open_time_graf()
-        
-        # Здесь открываем файл, получаем данные и работаем с ними
+            
+            self.send_time_graf_data_file_signal.emit(self.all_file_data)
+            
 
+
+
+        
+        except Exception as e:            
+            self.textEdit_3.setText(f"Ошибка при чтении данных из файла: {str(e)}")
+            return None
        
 
     @pyqtSlot()
@@ -569,7 +618,12 @@ class MainApp(QtWidgets.QMainWindow):
                     self.textEdit.clear()
                 self.textEdit.append(_dict.get("param_edit"))
 
-                self.textEdit_2.setText(_dict.get("data_edit"))
+                self.textEdit_2.setText(_dict.get("data_edit"))   
+
+            case "global_write_file_error":
+                _str =  _dict.get("message") + "\n"
+                self.textEdit.clear()
+                self.textEdit.append(_str)  
 
             
 

@@ -1,9 +1,8 @@
 import time
 import sys
 from PyQt5 import QtCore, QtGui, QtWidgets, uic
-from PyQt5.QtCore import pyqtSignal, QObject, pyqtSlot, QTimer
+from PyQt5.QtCore import pyqtSignal, QObject, pyqtSlot, QThread, QTimer
 # from PyQt5.QtGui import QFont
-
 
 
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
@@ -24,11 +23,18 @@ import COMMANDS as COMM
 import h5py
 import os
 
+import struct
+
+import threading  
+
 
 class Ui_Form(object):
 
     # сигнал передачи данных в GUI (тип данных - словарь)   
     gui_info_signal = pyqtSignal(object) 
+
+    # Создаем сигнал для записи данных спектра в файл в отдельном потоке
+    write_file_signal = pyqtSignal(object)
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
@@ -201,11 +207,6 @@ class Ui_Form(object):
         self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = 1) 
         self.ax_1.add_line(self.line)
 
-
-
-
-
-
         # Создаем Figure и FigureCanvas
         self.figure_2 = plt.figure()          
         self.canvas_2 = FigureCanvas(self.figure_2)        
@@ -214,8 +215,7 @@ class Ui_Form(object):
         layout_2.addWidget(self.canvas_2)
         #  # Добавляем панель инструментов для навигации по графику
         self.navigation_toolbar_2 = NavigationToolbar(self.canvas_2, Form) 
-        layout_2.addWidget(self.navigation_toolbar_2)     
-
+        layout_2.addWidget(self.navigation_toolbar_2)   
 
         self.start_spectre_time = None
         self.checkBox.stateChanged.connect(self.on_checkBox_file_search)   
@@ -226,8 +226,39 @@ class Ui_Form(object):
         # Счетчик групп записей в файл
         self.group_file_index = 0
 
+        # Атрибут потока записи данных
+        self.write_file_thread  = None     
 
 
+        # Соединяем сигнал с методом запуска потока записи в файл
+        self.write_file_signal.connect(self.write_file_thread_start)       
+
+
+        # Атрибут данных полученных из файла спектра
+        self.all_file_data = [] 
+
+        # Атрибут-счетчик загруженных групп из файла
+        self.count_load_groups = 0
+
+        # Атрибут количества загруженных групп из файла
+        self.max_load_groups = 0
+
+        self.data_file_timer = QTimer() 
+        
+        self.data_file_timer.timeout.connect(self.proc_data_file_timer)
+
+
+        self.comboBox.activated.connect(self.handle_combobox_activated)
+
+        self.pushButton.clicked.connect(self.handle_button_start_timer)  
+
+        self.pushButton_3.clicked.connect(self.handle_button_one_group)  
+
+        self.pushButton_4.clicked.connect(self.handle_button_all_groups)  
+
+        self.pushButton.setEnabled(False)
+        self.pushButton_3.setEnabled(False)
+        self.pushButton_4.setEnabled(False)
 
 
 
@@ -237,13 +268,148 @@ class Ui_Form(object):
         self.checkBox.setText(_translate("Form", "     Завантажувати дані у файл"))
         self.comboBox.setItemText(0, _translate("Form", "Режим таймера"))
         self.comboBox.setItemText(1, _translate("Form", "Покроковий режим"))
-        self.comboBox.setItemText(2, _translate("Form", "Повне завантаження"))
-        self.pushButton.setText(_translate("Form", "Виконати  крок завантаження"))
-        self.pushButton_3.setText(_translate("Form", "Резерв"))
-        self.pushButton_4.setText(_translate("Form", "Резерв"))
+        self.comboBox.setItemText(2, _translate("Form", "Повне завантаження"))  
+        self.pushButton.setText(_translate("Form", "Включити таймер"))
+        self.pushButton_3.setText(_translate("Form", "Зробити крок завантаження"))
+        self.pushButton_4.setText(_translate("Form", "Зробити повне завантаження"))
+
+       
+    def handle_button_start_timer(self):
+        self.data_file_timer.start(1500)
+
+    def handle_button_one_group(self):
+        self.work_file_spectrum_data(False)
 
 
+    def handle_button_all_groups(self):
+        self.work_file_spectrum_data(True)
+        
+    
 
+    def handle_combobox_activated(self, index): 
+        self.pushButton.setEnabled(False)
+        self.pushButton_3.setEnabled(False)
+        self.pushButton_4.setEnabled(False)
+        match index:
+            case 0:
+                self.pushButton.setEnabled(True)
+            case 1:
+                self.pushButton_3.setEnabled(True)
+            case 2:
+                self.pushButton_4.setEnabled(True)
+            case _:
+                return None
+            
+        
+
+
+    def process_render_func(self, result: np.ndarray):
+        """
+        Параметры:
+        - result (np.ndarray): numpy массив с данными, имеет вид: 
+        result = np.zeros(num_entries, dtype=[('channel', np.uint16), ('time', np.uint32)]).    
+        Метод предназначен для обработки данных часовго cпектра, полученного из 
+        файла и их визуализации
+        """ 
+        try:
+            # Фильтруем массив
+            mask = (result['channel'] != 0) & (result['time'] < len(self.global_buff))
+            filtered = result[mask]
+
+            # Массовая запись в глобальный буфер
+            self.global_buff[filtered['time']] = filtered['channel'].astype(np.int16)
+
+            # Получаем numpy массивы для отрисовки             
+            indices = result['channel'] 
+            values  = result['time']       
+        
+            # Добавляем новые точки на график 
+            self.line.set_xdata(np.append(self.line.get_xdata(), values)) 
+            self.line.set_ydata(np.append(self.line.get_ydata(), indices)) 
+            self.ax_1.relim() 
+            self.ax_1.autoscale_view()
+            
+            self.canvas_1.draw()
+            
+            # Здесь будет дальнейшая обработка
+
+        except Exception as e:
+            self.textEdit_spectre.append(f"Виник exception при відмальовці даних, {str(e)}" + "\n")
+
+
+    def fill_numpy_array_from_group_data(self, param = False):
+        """
+        Метод обрабатывает данные из файла часового спектра,
+        возвращает numpy массив np.zeros(all_entries, dtype=[('channel', np.uint16), ('time', np.uint32)]) для сохранения в self.global_buff  и отрисовки
+        При param == False метод отдает очередной кадр
+        При param == True метод отдает все полученные данные
+        
+        """ 
+        if param:   # Отдаем сразу все данные           
+            all_entries = sum(len(group_data) for group_data in self.all_file_data)
+            result = np.zeros(all_entries, dtype=[('channel', np.uint16), ('time', np.uint32)])
+
+            index = 0
+            for group_data in self.all_file_data:
+                for channel, time in group_data:
+                    result[index]['channel'] = channel
+                    result[index]['time'] = time
+                    index += 1
+
+            
+            self.count_load_groups = self.max_load_groups
+            self.textEdit_spectre.append("Дані завантажені повністю")
+            return result
+        
+        else: # Отдаем очередной кадр
+            if self.count_load_groups >= self.max_load_groups:
+                return np.zeros(7, dtype=[('channel', np.uint16), ('time', np.uint32)])
+
+            group_data = self.all_file_data[self.count_load_groups]
+            num_entries = len(group_data)
+            result = np.zeros(num_entries, dtype=[('channel', np.uint16), ('time', np.uint32)])
+
+            for i, (channel, time) in enumerate(group_data):
+                result[i]['channel'] = channel
+                result[i]['time'] = time
+
+            self.textEdit_spectre.append(f"Завантажено {str(self.count_load_groups)} кадр")
+
+            self.count_load_groups += 1
+            return result
+
+    def work_file_spectrum_data(self, param : bool):    
+        arr = self.fill_numpy_array_from_group_data(param)
+        nonzero_count = np.count_nonzero(arr['channel'])
+        if not nonzero_count:     
+            self.textEdit_spectre.append("Дані завантажені повністю")
+            return None
+            
+        self.process_render_func(arr)
+
+    @pyqtSlot()
+    def proc_data_file_timer(self):
+        if self.count_load_groups >= self.max_load_groups:
+            self.data_file_timer.stop()
+            return None
+            
+        self.work_file_spectrum_data(False)
+
+
+    
+
+
+    @pyqtSlot(object)
+    def write_file_thread_start(self, buffer):
+        try:           
+            self.write_file_thread = threading.Thread(target = self.load_data_to_file, args = (buffer, ))
+            self.write_file_thread.start()
+
+        except Exception as e:
+            self.write_file_thread = None
+            info_dict = {"type": "global_write_file_error", "message": f"Виник exception у потоку запису даних спектру у файл , {str(e)}"}
+            if self.gui_info_signal: 
+                self.gui_info_signal.emit(info_dict) 
     
     @pyqtSlot(object)  
     def set_start_spectre_time(self, _time):
@@ -308,12 +474,33 @@ class Ui_Form(object):
             print(f"Error: {e}")
             self.file_path = None
 
+
+    @pyqtSlot(object)   
+    def load_data_from_file(self, data_list):
+        # Записываем данные файла в атрибут класса all_file_data
+        self.all_file_data = data_list        
         
-    
+        # Проводим предварительную очистку 
+        self.clear_spectre()
+        self.count_load_groups = 0
+
+        # Записываем макс. число кадров из файла 
+        self.max_load_groups = len(self.all_file_data)
+
+        # Проверяем на наличие информации в файле
+        if not self.max_load_groups:
+            self.textEdit_spectre.append(" У файлі відсутні дані\n")
+            return None
+
+        self.textEdit_spectre.append("Прийнято " + str(self.max_load_groups) + " груп даних\nВиберіть режим роботи з даними файлу")
+
 
 
     @pyqtSlot()
     def clear_spectre(self):
+
+        self.textEdit_spectre.clear()
+
         # Очищаем глобальный массив часового спектра
         self.global_buff = np.zeros(COMM.Const.GLOB_BUFF_SIZE,  dtype = np.int16)                
         
@@ -355,158 +542,21 @@ class Ui_Form(object):
         self.ax_1.add_line(self.line)
 
 
-
-
-
-
-    def get_nonzero_values(self):
-
-        # Получаем индексы ненулевых значений
-        nonzero_indices = np.nonzero(self.global_buff)[0]        
-        # Получаем сами ненулевые значения
-        nonzero_values = self.global_buff[nonzero_indices]
-        
-        return nonzero_indices, nonzero_values
-    
-
-    def load_data_to_file(self, data_list):        
-        if self.file_path:        
-            with h5py.File(self.file_path, 'a') as file:  # Открытие файла на дозапись
-                group_name = f'list_{self.group_file_index}'  # Уникальное имя для каждой группы данных
-                group = file.create_group(group_name)
-                for j, (val1, val2) in enumerate(data_list):
-                    group.create_dataset(f'pair_{j}', data=np.array([val1, val2]))
-                self.group_file_index += 1  # Увеличение порядкового номера для следующего списка данных
-
-
-
-
-    # @pyqtSlot(bytearray)
-    # def time_spectre_slot(self, data:bytearray)-> None:  
-
-    #     try: 
-
-    #         start_time = time.perf_counter() 
-
-    #         if(data[5] == 0x09):
-    #             return None             
-
-    #         # Обнуляем суммарную часовую метку
-    #         self.time_parameter = 0 
-
-
-    #         # Преобразуем data в numpy массив для векторизации
-    #         data_np = np.frombuffer(data, dtype = np.uint8)
-    #         buff_list = []            
-            
-    #         # Преобразуем данные сразу в numpy массивы для обработки
-    #         l_byte_ch = data_np[6:8994:6]
-    #         m_byte_ch = data_np[7:8994:6]
-    #         channels = l_byte_ch + (m_byte_ch << 8)
-
-    #         l0_byte_tm = data_np[8:8994:6]
-    #         l1_byte_tm = data_np[9:8994:6]
-    #         tmp_val_l = l0_byte_tm + (l1_byte_tm << 8)
-
-    #         l2_byte_tm = data_np[10:8994:6]
-    #         l3_byte_tm = data_np[11:8994:6]
-    #         tmp_val_m = l2_byte_tm  + (l3_byte_tm << 8)   
-
-    #         new_times  = tmp_val_l + (tmp_val_m << 16)  
-            
-    #         # Заполняем buff_list и глобальный буфер
-    #         for i in range(len(channels)):
-    #             channel = channels[i]
-    #             if channel == 0:
-    #                 continue
-    #             new_time = new_times[i]
-    #             self.time_parameter += new_time
-    #             if self.time_parameter > 1000000:
-    #                 break
-    #             buff_list.append((channel, self.time_parameter))
-
-    #         for pair in buff_list:
-    #             value = pair[0]
-    #             index = pair[1]
-    #             if value == 0 or index == 0:
-    #                 continue
-    #             if index < len(self.global_buff):
-    #                 self.global_buff[index] = value           
-
-    #         if self.checkBox.isChecked():
-    #             self.load_data_to_file(buff_list)
-
-           
-    #         # ## Получаем numpy массивы для отрисовки
-    #         # nonzero_indices, nonzero_values = self.get_nonzero_values()            
-    #         # self.ax_1.scatter(nonzero_indices, nonzero_values,  s = 3, color='blue', label = "Small Points" )   
-
-    #          # Преобразуем buff_list в numpy массивы для отрисовки
-    #         indices, values = zip(*buff_list)
-    #         indices = np.array(indices)
-    #         values = np.array(values) 
-
-    #         # self.ax_1.scatter(indices, values,  s = 3, color='blue', label = "Small Points" )   
-    #         self.ax_1.scatter(values, indices,  s = 3, color='blue', label = "Small Points" )   
-                
-               
-    #         self.canvas_1.draw()   
-
-
-    #         # Время набора спектра
-    #         t_value = data[9006]    + (data[9007] << 8) 
-
-    #         # ПЕД
-    #         l_byte_ped = data[9008] + (data[9009] << 8)
-    #         m_byte_ped = data[9010] + (data[9011] << 8) 
-    #         num = l_byte_ped + (m_byte_ped << 8)       
-    #         ped = num * 0.01 
-
-    #         # CPS
-    #         value = data[9016]   + (data[9017] << 8) 
-            
-    #         # Тестовый байт
-    #         byte_to_check = data[9013]
-    #         high_sens_detect  = "OK"
-    #         low_sens_detector = "OK"           
-    #         if byte_to_check & 0b00000001:   # D0 = 1 - отказ высокочувствительного детектора
-    #             high_sens_detect  = "ERROR" 
-
-    #         if byte_to_check & 0b00000010:   # D1 = 1 - отказ низкочувствительного детектора
-    #             low_sens_detector = "ERROR" 
-           
-            
-    #         formatted_text = f"""
-    #             <h3><b><i>Накопичення часового спектру</i></b></h3>
-    #             <p><b><i>Час початку накопичення:</i></b> <span style="color: blue;">&nbsp;{self.start_spectre_time }</span></p>
-    #             <p><b><i>Тривалість накопичення, с:</i></b> <span style="color: green;">&nbsp;{t_value}</span></p>
-    #             <p><b><i>Потужність дози, мкЗв/год:</i></b> <span style="color: red;">&nbsp;{str(ped)}</span></p>
-    #             <p><b><i>Завантаження, імп/сек:</i></b> <span style="color: purple;">&nbsp;{str(value)}</span></p>
-    #             <p><b>Самоконтроль ЛГМ:</b> <span style="color: black;">&nbsp;{low_sens_detector}</span></p>
-    #             <p><b>Самоконтроль високочутливого детект.:</b> <span style="color: black;">&nbsp;{high_sens_detect}</span></p>
-    #             """     
-
-    #         end_time = time.perf_counter()
-    #         elapsed_time_ms = (end_time - start_time) * 1000  # Преобразование в миллисекунды
-    #         size = str(len(data))   
-    #         _str  = "Прийнято " + size + " байт спектру\n"
-    #         _str += f"Час виконання методу: {elapsed_time_ms:.3f} мілісекунд\n"            
-
-    #         info_dict = {"type": "time_spectre_params", "param_edit": _str, "data_edit": formatted_text}
-    #         if self.gui_info_signal: 
-    #             self.gui_info_signal.emit(info_dict)
-
-    #     except Exception as e:
-    #         info_dict = {"type": "time_spectre_global_write_error", "message": f"Виник exception у потоку запису даних, {str(e)}"}
-    #         if self.gui_info_signal: 
-    #             self.gui_info_signal.emit(info_dict)
-    #         self.textEdit_spectre.append(str(e) + "\n")
-
-
-
-
-
-
+    def load_data_to_file(self, data_array):
+        """
+            Во время получения данных из прибора каждый полученный кадр
+            записываем в файл, выбранный пользователем
+        """
+        try:
+            if self.file_path:        
+                with h5py.File(self.file_path, 'a') as file:  # Открытие файла на дозапись
+                    group_name = f'list_{self.group_file_index}'  # Уникальное имя для каждой группы данных
+                    group = file.create_group(group_name)
+                    for j in range(len(data_array)):
+                        group.create_dataset(f'pair_{j}', data = np.array([data_array[j]['channel'], data_array[j]['time']]))
+                    self.group_file_index += 1  # Увеличение порядкового номера для следующего списка данных
+        except Exception as e:
+            self.textEdit_spectre.append("Виник exception під час запису даних у файл")
 
 
     @pyqtSlot(bytearray)
@@ -517,80 +567,70 @@ class Ui_Form(object):
             start_time = time.perf_counter() 
 
             if(data[5] == 0x09):
-                return None             
+                return None          
 
-            # Обнуляем суммарную часовую метку
-            self.time_parameter = 0 
+            # Исходный размер numpy массива
+            num_entries = 1550                 # (len(data) - 6) // 6  # Каждая запись занимает 6 байт    for i in range(6, 8994, 6):
 
-            buff_list = []      
-            l_byte_ch = None
-            m_byte_ch = None
-            l0_byte_tm = None
-            l1_byte_tm = None
-            l2_byte_tm = None
-            l3_byte_tm = None  
+            # Создаем пустой массив NumPy с нужным количеством записей
+            result = np.zeros(num_entries, dtype=[('channel', np.uint16), ('time', np.uint32)])
+
+            time_parameter = 0  # Локальная переменная для накопления времени
+            count = 0  # Счетчик валидных записей
 
             for i in range(6, 8994, 6):
-                l_byte_ch = data[i]  
-                m_byte_ch = data[i + 1] 
+                # Распаковка сразу всех необходимых байт
+                l_byte_ch, m_byte_ch, l0_byte_tm, l1_byte_tm, l2_byte_tm, l3_byte_tm = struct.unpack_from("6B", data, i)
+                
+                # Вычисление канала
                 channel = l_byte_ch + (m_byte_ch << 8)
-
                 if channel == 0:
                     continue
 
-                l0_byte_tm = data[i + 2]
-                l1_byte_tm = data[i + 3]                
-                tmp_val_l = l0_byte_tm  + (l1_byte_tm << 8)
-
-                l2_byte_tm = data[i + 4]
-                l3_byte_tm = data[i + 5]  
-                tmp_val_m = l2_byte_tm  + (l3_byte_tm << 8)       
-
-                new_time = tmp_val_l + (tmp_val_m << 16)            
-
-                self.time_parameter += new_time   
-                if  self.time_parameter >  1000000:
-                    break   
-
-                buff_list.append((channel,  self.time_parameter))        
-
-            for pair in buff_list:
-                value = pair[0]
-                index = pair[1]
-                if value == 0 or index == 0:
+                # Вычисление временного значения
+                tmp_val_l = l0_byte_tm + (l1_byte_tm << 8)
+                tmp_val_m = l2_byte_tm + (l3_byte_tm << 8)
+                new_time = tmp_val_l + (tmp_val_m << 16)
+                if new_time == 0:
                     continue
-                if index < len(self.global_buff):  
-                    self.global_buff[index] = value
+
+                # Обновление time_parameter
+                time_parameter += new_time
+                if time_parameter > 1000000:
+                    break
+
+                # Добавляем данные в NumPy массив
+                result[count] = (channel, time_parameter)
+                count += 1
+
+            # Отсекаем пустые записи
+            result = result[:count]
 
             if self.checkBox.isChecked():
-                self.load_data_to_file(buff_list)
+                self.write_file_signal.emit(result)  
 
+            #################### ВСТАВИТЬ МЕТОД НАЧАЛО ###############################
+
+            # Фильтруем массив
+            mask = (result['channel'] != 0) & (result['time'] < len(self.global_buff))
+            filtered = result[mask]
+
+            # Массовая запись в глобальный буфер
+            self.global_buff[filtered['time']] = filtered['channel'].astype(np.int16)
+
+            # Получаем numpy массивы для отрисовки             
+            indices = result['channel'] 
+            values  = result['time']       
            
-               # ## Получаем numpy массивы для отрисовки
-            # nonzero_indices, nonzero_values = self.get_nonzero_values()            
-            # self.ax_1.scatter(nonzero_indices, nonzero_values,  s = 3, color='blue', label = "Small Points" )   
-
-                ## # Преобразуем buff_list в numpy массивы для отрисовки
-            indices, values = zip(*buff_list)
-            indices = np.array(indices)
-            values = np.array(values) 
-
-         
-            # self.ax_1.scatter(values, indices,  s = 3, color='blue', label = "Small Points" )      
-
-
-            # # Добавление объекта Line2D на график 
-            # line = Line2D(values, indices, linestyle='None', marker='o', color='blue', markersize=3)    
-            # self.ax_1.add_line(line)
-
             # Добавляем новые точки на график 
             self.line.set_xdata(np.append(self.line.get_xdata(), values)) 
             self.line.set_ydata(np.append(self.line.get_ydata(), indices)) 
             self.ax_1.relim() 
             self.ax_1.autoscale_view()
                
-            self.canvas_1.draw()   
+            self.canvas_1.draw()  
 
+            #################### ВСТАВИТЬ МЕТОД ОКОНЧАНИЕ ############################
 
             # Время набора спектра
             t_value = data[9006]    + (data[9007] << 8) 
@@ -629,8 +669,10 @@ class Ui_Form(object):
             elapsed_time_ms = (end_time - start_time) * 1000  # Преобразование в миллисекунды
             size = str(len(data))   
             _str  = "Прийнято " + size + " байт спектру\n"
-            _str += f"Час виконання методу: {elapsed_time_ms:.3f} мілісекунд\n"            
-
+            _str += f"Час виконання методу: {elapsed_time_ms:.3f} мілісекунд\n" 
+            nonzero_count = np.count_nonzero(self.global_buff) 
+            _str += f"Кількість eлементів у контейнері: {nonzero_count}\n"       
+            
             info_dict = {"type": "time_spectre_params", "param_edit": _str, "data_edit": formatted_text}
             if self.gui_info_signal: 
                 self.gui_info_signal.emit(info_dict)

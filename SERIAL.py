@@ -172,28 +172,9 @@ class SerialPortHandler(QObject):
             if self.gui_info_signal:
                 self.gui_info_signal.emit(info_dict) 
                 return None
-        
-       
-                
-                
         return None
     
-    # def get_wait_time(self, mode: str) -> float:
-    #     """
-    #     Функция возвращает время ожидания ответа прибора после записи запроса 
-    #     """    
-    #     match mode:
-    #         case "RAD_DOSE" | "SER_NUM" | "RAD_INTENS" | "TEMP":
-    #             return 0.06
-                
-    #         # case "TOGGLE_SIMPLE_SPECTRE":
-    #         #     return 0.
-                
-    #         # case "TOGGLE_TIME_SPECTRE":
-    #         #     return 0.1   #1.5
-
-    #         case _ : 
-    #             return None
+   
 
     def clear_mode(self)-> None:
         """
