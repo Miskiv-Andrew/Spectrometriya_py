@@ -4,6 +4,8 @@ class Const:
     READ_PAUSE = 0.1  #Const.READ_PAUSE
     NUM_ITERATION = 21 #10 # Кол-во итераций по "наполнению" парами импульс-время 1 секунды
     GLOB_BUFF_SIZE = 1200000 
+    LOAD_SPECTRE_TIMER_INTERVAL = 1000  
+    DOT_SIZE = 2   
 
 
 class Command: 

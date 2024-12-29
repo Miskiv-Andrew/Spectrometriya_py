@@ -27,6 +27,8 @@ import struct
 
 import threading  
 
+import COMMANDS as COMM 
+
 
 class Ui_Form(object):
 
@@ -204,7 +206,7 @@ class Ui_Form(object):
         self.figure_1.subplots_adjust(left = 0.08, right = 0.95, top = 0.95, bottom = 0.2)
 
         # Создание пустого Line2D 
-        self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = 1) 
+        self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = COMM.Const.DOT_SIZE) 
         self.ax_1.add_line(self.line)
 
         # Создаем Figure и FigureCanvas
@@ -269,13 +271,22 @@ class Ui_Form(object):
         self.comboBox.setItemText(0, _translate("Form", "Режим таймера"))
         self.comboBox.setItemText(1, _translate("Form", "Покроковий режим"))
         self.comboBox.setItemText(2, _translate("Form", "Повне завантаження"))  
+        self.comboBox.addItem("Очистити завантаження")
+
         self.pushButton.setText(_translate("Form", "Включити таймер"))
         self.pushButton_3.setText(_translate("Form", "Зробити крок завантаження"))
         self.pushButton_4.setText(_translate("Form", "Зробити повне завантаження"))
 
-       
+
     def handle_button_start_timer(self):
-        self.data_file_timer.start(1500)
+        if self.pushButton.text() == "Включити таймер": 
+            self.pushButton.setText("Зупинити таймер")
+            self.data_file_timer.start(COMM.Const.LOAD_SPECTRE_TIMER_INTERVAL)
+            return None
+
+        self.pushButton.setText("Включити таймер")
+        self.data_file_timer.stop()
+
 
     def handle_button_one_group(self):
         self.work_file_spectrum_data(False)
@@ -291,12 +302,16 @@ class Ui_Form(object):
         self.pushButton_3.setEnabled(False)
         self.pushButton_4.setEnabled(False)
         match index:
-            case 0:
+            case 0:  # Таймер
                 self.pushButton.setEnabled(True)
-            case 1:
+            case 1:  # Ручной режим
                 self.pushButton_3.setEnabled(True)
-            case 2:
+            case 2:  # Полная загрузка
                 self.pushButton_4.setEnabled(True)
+            case 3:  # Очистка после загрузки
+                # Проводим предварительную очистку 
+                self.clear_spectre()
+                self.count_load_groups = 0                
             case _:
                 return None
             
@@ -358,7 +373,10 @@ class Ui_Form(object):
 
             
             self.count_load_groups = self.max_load_groups
-            self.textEdit_spectre.append("Дані завантажені повністю")
+            self.textEdit_spectre.append(f"Дані завантажені повністю, {str(len(self.all_file_data))} кадрів")
+            self.pushButton.setEnabled(False)
+            self.pushButton_3.setEnabled(False)
+            self.pushButton_4.setEnabled(False)
             return result
         
         else: # Отдаем очередной кадр
@@ -373,7 +391,7 @@ class Ui_Form(object):
                 result[i]['channel'] = channel
                 result[i]['time'] = time
 
-            self.textEdit_spectre.append(f"Завантажено {str(self.count_load_groups)} кадр")
+            self.textEdit_spectre.setText(f"Завантажено {str(self.count_load_groups + 1)} кадр")
 
             self.count_load_groups += 1
             return result
@@ -383,6 +401,9 @@ class Ui_Form(object):
         nonzero_count = np.count_nonzero(arr['channel'])
         if not nonzero_count:     
             self.textEdit_spectre.append("Дані завантажені повністю")
+            self.pushButton.setEnabled(False)
+            self.pushButton_3.setEnabled(False)
+            self.pushButton_4.setEnabled(False)
             return None
             
         self.process_render_func(arr)
@@ -391,6 +412,10 @@ class Ui_Form(object):
     def proc_data_file_timer(self):
         if self.count_load_groups >= self.max_load_groups:
             self.data_file_timer.stop()
+            self.textEdit_spectre.append("Дані завантажені повністю")
+            self.pushButton.setEnabled(False)
+            self.pushButton_3.setEnabled(False)
+            self.pushButton_4.setEnabled(False)
             return None
             
         self.work_file_spectrum_data(False)
@@ -492,8 +517,10 @@ class Ui_Form(object):
             self.textEdit_spectre.append(" У файлі відсутні дані\n")
             return None
 
-        self.textEdit_spectre.append("Прийнято " + str(self.max_load_groups) + " груп даних\nВиберіть режим роботи з даними файлу")
-
+        self.textEdit_spectre.append("Прийнято " + str(self.max_load_groups) + " кадрів даних\nВиберіть режим роботи з даними файлу")
+        self.pushButton.setEnabled(False)
+        self.pushButton_3.setEnabled(False)
+        self.pushButton_4.setEnabled(False)
 
 
     @pyqtSlot()
@@ -538,7 +565,7 @@ class Ui_Form(object):
         # self.figure_1.subplots_adjust(left = 0.08, right = 0.95, top = 0.95, bottom = 0.2)
 
         # Создание пустого Line2D 
-        self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = 1) 
+        self.line = Line2D([], [], linestyle='None', marker='o', color='blue', markersize = COMM.Const.DOT_SIZE) 
         self.ax_1.add_line(self.line)
 
 
