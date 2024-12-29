@@ -19,6 +19,17 @@ import os
 
 COMM.Const.MAX_ERROR
 
+
+def resource_path(relative_path):
+    """Получить путь к ресурсам (например, к файлам .ui) в собранной программе"""
+    try:
+        # PyInstaller создает временную папку _MEIPASS, когда программа запущена
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")  # Для разработки
+
+    return os.path.join(base_path, relative_path)
+
 class SimpleGraf(QtWidgets.QWidget, simple_graf.Ui_Form):  # Используем QWidget для немодального окна
 
     def __init__(self):
@@ -70,8 +81,11 @@ class MainApp(QtWidgets.QMainWindow):
     def __init__(self):        
         super(MainApp, self).__init__()
 
+        main_window_ui = resource_path('main_window.ui')  # Используем функцию resource_path для получения правильного пути
+        uic.loadUi(main_window_ui, self)
+
         # Загружаем интерфейс из файла .ui
-        uic.loadUi('main_window.ui', self)      
+        # uic.loadUi('main_window.ui', self)      
 
         # Создаем экземпляр SerialPortHandler
         self.serial_handler = SERIAL.SerialPortHandler()    

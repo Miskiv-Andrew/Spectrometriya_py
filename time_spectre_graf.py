@@ -293,8 +293,9 @@ class Ui_Form(object):
 
 
     def handle_button_all_groups(self):
-        self.work_file_spectrum_data(True)
-        
+        self.clear_spectre()
+        self.count_load_groups = 0
+        self.work_file_spectrum_data(True)        
     
 
     def handle_combobox_activated(self, index): 
